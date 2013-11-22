@@ -21,6 +21,7 @@ var scrapeTeams = function (next) {
 
     $('table#teams_standard_batting').find('a').each(function () {
       teamLinks.push(url.resolve('http://www.baseball-reference.com/leagues/AL/2013.shtml', $(this).attr('href')))
+      teamLinks.push(url.resolve('http://www.baseball-reference.com/leagues/NL/2013.shtml', $(this).attr('href')))
     })
     
     next()
@@ -45,13 +46,13 @@ var scrapeTeam = function (teamUrl, next) {
   })
 }
 
-var stats = []
-var salaries = []
+//list of player objects
+var players = []
 
 var scrapePlayer = function (playerUrl, next) {
   request(playerUrl, function (err, res, body) {
     console.log("scraping player: "+playerUrl)
-    
+
     if (err) return next()
 
     var $ = cheerio.load(body, {
@@ -64,41 +65,45 @@ var scrapePlayer = function (playerUrl, next) {
 
     var playerStats = [] //list of AGE, AT BATS, RUNS, HITS, HOME RUNS, RBI, SB, BA
       , statMap = {} //map from year to playerStats
-      , columns = {
-          1: true
-        , 6: true
-        , 7: true
-        , 8: true
-        , 11: true
-        , 12: true
-        , 13: true
-        , 17: true
-      }
+      , columns = ['yearNumber','age','team','league','gamesPlayed','plateAppearances','atBats','runs','hits','doubles'
+        ,'triples','homeRuns','runsBattedIn','stolenBases','caughtStealing','walks','strikeouts','battingAverage'
+        ,'onBasePercentage','ops','opsPlus','totalBases','groundIntoDoublePlay','hitByPitch','sacrificeHits'
+        ,'sacrificeFlies','intentionalWalks']
       , playerSalaries = []
+
+    var player = {
+        url: playerUrl
+      , years: {}
+    }
 
     $('table#batting_standard').find('tr.full').each(function () {
       var curYear = []
-      var year = $(this).find('td').first().text()
+      var stats = {}
+
+      var yearNumber = $(this).find('td').first().text()
+
+
       $(this).find('td').each(function (i) {
-        if (i in columns) {
-          curYear.push($(this).text())
-        }
+        if(i>=columns.length) return false
+
+        stats[columns[i]] = $(this).text()
       })
 
-      playerStats.push(curYear)
-      statMap[year] = curYear
+      player.years[yearNumber] = stats
     })
 
     $('table#salaries').find('td').each(function () {
       var year = $(this).attr('data-year')
       var amount = $(this).attr('data-amount')
 
-      if (year&&statMap[year]&&amount&&!isNaN(amount)) {
-        stats.push(statMap[year])
-        salaries.push(Number(amount))
+      if (year&&player.years[year]&&amount&&!isNaN(amount)) {
+        player.years[year].salary = amount
       }
     })
 
+    players.push(player)
+
+    console.log("player: "+JSON.stringify(player))
     next()
   })
 }
@@ -110,12 +115,7 @@ var f = ff(function () {
 }, function () {
   async.eachLimit(playerLinks, 3, scrapePlayer, f.slot())
 }, function () {
-  console.log(JSON.stringify(stats))
-  console.log('\n\n\n'+JSON.stringify(salaries))
-  fs.writeFile("stats.txt", JSON.stringify(stats), function (err) {
-    if (err) console.log(err)
-  })
-  fs.writeFile("salaries.txt", JSON.stringify(salaries), function (err) {
+  fs.writeFile("data.txt", JSON.stringify(players), function (err) {
     if (err) console.log(err)
   })
 })
